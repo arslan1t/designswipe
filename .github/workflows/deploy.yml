@@ -1,30 +1,12 @@
-name: Deploy to GitHub Pages
-
+# DISABLED — GitHub Pages cannot host Next.js apps with API routes.
+# The app is deployed via Vercel (automatic on push to main).
+# See .github/workflows/ci.yml for the active CI workflow.
+name: Deploy (disabled)
 on:
   push:
-    branches: [main]
-
+    branches: ["__disabled__"]
 jobs:
-  deploy:
+  noop:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20.10.0'
-          cache: 'npm'
-      
-      - name: Install dependencies
-        run: npm ci
-      
-      - name: Build
-        run: npm run build
-      
-      - name: Deploy to GitHub Pages
-        uses: peaceiris/actions-gh-pages@v3
-        with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: ./out
-          cname: designswipe.vercel.app
+      - run: echo "disabled"
