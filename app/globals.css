@@ -1,14 +1,103 @@
 @import "tailwindcss";
 
+/* ── Design Tokens ────────────────────────────────────────────────────────── */
+:root {
+  --bg-base:      #080C1E;
+  --bg-card:      rgba(15, 20, 40, 0.7);
+  --bg-card-2:    rgba(20, 26, 50, 0.6);
+  --border:       rgba(255,255,255,0.07);
+  --border-2:     rgba(255,255,255,0.04);
+  --accent:       #0EA5E9;
+  --accent-dim:   rgba(14,165,233,0.15);
+  --text-primary: #F0F4FF;
+  --text-sub:     #94A3B8;
+  --text-muted:   #475569;
+}
+
+/* ── Base ─────────────────────────────────────────────────────────────────── */
 @layer base {
+  html {
+    scroll-behavior: smooth;
+    -webkit-tap-highlight-color: transparent;
+  }
+
   html, body {
-    @apply bg-[#0A0F2C] text-white min-h-screen font-sans;
+    @apply min-h-screen font-sans antialiased;
+    background-color: var(--bg-base);
+    color: var(--text-primary);
+  }
+
+  * {
+    box-sizing: border-box;
+  }
+
+  ::selection {
+    background: rgba(14,165,233,0.3);
+    color: white;
+  }
+
+  /* Remove number input arrows */
+  input[type="number"]::-webkit-inner-spin-button,
+  input[type="number"]::-webkit-outer-spin-button {
+    -webkit-appearance: none;
   }
 }
 
+/* ── Utilities ────────────────────────────────────────────────────────────── */
 @layer utilities {
-  * { @apply transition-all duration-200 ease-in-out; }
-  .glass { @apply bg-white/10 backdrop-blur-lg border border-white/20 rounded-2xl shadow-xl; }
-  .btn-like { @apply bg-green-500 hover:bg-green-600 text-white px-6 py-3 rounded-full text-lg font-semibold; }
-  .btn-dislike { @apply bg-red-500 hover:bg-red-600 text-white px-6 py-3 rounded-full text-lg font-semibold; }
+  /* Cards */
+  .card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 1.25rem;
+  }
+  .card-2 {
+    background: var(--bg-card-2);
+    border: 1px solid var(--border-2);
+    border-radius: 1rem;
+  }
+
+  /* Glassmorphism */
+  .glass {
+    background: rgba(255,255,255,0.05);
+    backdrop-filter: blur(20px);
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 1.25rem;
+  }
+
+  /* Scrollbar hide */
+  .scrollbar-hide {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+  .scrollbar-hide::-webkit-scrollbar {
+    display: none;
+  }
+
+  /* Gradient text */
+  .gradient-text {
+    background: linear-gradient(135deg, #7DD3FC 0%, #38BDF8 50%, #0EA5E9 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  /* Section divider */
+  .section-label {
+    font-size: 0.7rem;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+  }
+
+  /* Smooth all transitions (restrained) */
+  button, a, [role="button"] {
+    transition: opacity 0.15s ease, background-color 0.15s ease,
+                border-color 0.15s ease, color 0.15s ease, box-shadow 0.15s ease;
+  }
+
+  /* Legacy compat */
+  .btn-like    { @apply bg-emerald-500 hover:bg-emerald-600 text-white px-6 py-3 rounded-full text-lg font-semibold; }
+  .btn-dislike { @apply bg-rose-500 hover:bg-rose-600 text-white px-6 py-3 rounded-full text-lg font-semibold; }
 }
