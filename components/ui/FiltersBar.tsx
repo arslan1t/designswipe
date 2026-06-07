@@ -3,108 +3,124 @@
 import { useState } from "react";
 import { SlidersHorizontal, X, ChevronDown } from "lucide-react";
 import { useFilters } from "@/app/context/FilterContext";
+import { useLanguage } from "@/lib/i18n";
 import type {
   Style, Room, Palette, Budget, Lighting,
   Material, Orientation, Theme, FilterState,
 } from "@/lib/types";
 
-// ─── Russian labels ────────────────────────────────────────────────────────────
+// ─── Labels (EN) ──────────────────────────────────────────────────────────────
 
-const STYLE_LABELS: Record<Style, string> = {
-  minimal: "Минимализм",
-  modern: "Модерн",
-  scandinavian: "Скандинавский",
-  japandi: "Japandi",
-  boho: "Бохо",
-  loft: "Лофт",
-  industrial: "Индустриальный",
-  classic: "Классика",
-  luxury: "Люкс",
+const STYLE_LABELS_EN: Record<Style, string> = {
+  minimal: "Minimalism", modern: "Modern", scandinavian: "Scandinavian",
+  japandi: "Japandi", boho: "Boho", loft: "Loft",
+  industrial: "Industrial", classic: "Classic", luxury: "Luxury",
+};
+const STYLE_LABELS_RU: Record<Style, string> = {
+  minimal: "Минимализм", modern: "Модерн", scandinavian: "Скандинавский",
+  japandi: "Japandi", boho: "Бохо", loft: "Лофт",
+  industrial: "Индустриальный", classic: "Классика", luxury: "Люкс",
 };
 
-const ROOM_LABELS: Record<Room, string> = {
-  living_room: "Гостиная",
-  bedroom: "Спальня",
-  kitchen: "Кухня",
-  bathroom: "Ванная",
-  office: "Кабинет",
-  studio: "Студия",
-  balcony: "Балкон",
-  dining_room: "Столовая",
-  hallway: "Прихожая",
+const ROOM_LABELS_EN: Record<Room, string> = {
+  living_room: "Living Room", bedroom: "Bedroom", kitchen: "Kitchen",
+  bathroom: "Bathroom", office: "Office", studio: "Studio",
+  balcony: "Balcony", dining_room: "Dining Room", hallway: "Hallway",
+};
+const ROOM_LABELS_RU: Record<Room, string> = {
+  living_room: "Гостиная", bedroom: "Спальня", kitchen: "Кухня",
+  bathroom: "Ванная", office: "Кабинет", studio: "Студия",
+  balcony: "Балкон", dining_room: "Столовая", hallway: "Прихожая",
 };
 
-const PALETTE_LABELS: Record<Palette, string> = {
-  warm: "🔶 Тёплая",
-  cool: "🔷 Холодная",
-  neutral: "⬜ Нейтральная",
-  bright: "✨ Яркая",
-  pastel: "🌸 Пастель",
+const PALETTE_LABELS_EN: Record<Palette, string> = {
+  warm: "🔶 Warm", cool: "🔷 Cool", neutral: "⬜ Neutral",
+  bright: "✨ Bright", pastel: "🌸 Pastel",
+};
+const PALETTE_LABELS_RU: Record<Palette, string> = {
+  warm: "🔶 Тёплая", cool: "🔷 Холодная", neutral: "⬜ Нейтральная",
+  bright: "✨ Яркая", pastel: "🌸 Пастель",
 };
 
-const BUDGET_LABELS: Record<Budget, string> = {
-  low: "💚 Бюджетно",
-  medium: "💛 Средний",
-  high: "💎 Премиум",
+const BUDGET_LABELS_EN: Record<Budget, string> = {
+  low: "💚 Budget", medium: "💛 Mid-range", high: "💎 Premium",
+};
+const BUDGET_LABELS_RU: Record<Budget, string> = {
+  low: "💚 Бюджетно", medium: "💛 Средний", high: "💎 Премиум",
 };
 
-const LIGHTING_LABELS: Record<Lighting, string> = {
-  soft: "🌤 Мягкий",
-  daylight: "☀️ Дневной",
-  ambient: "🕯 Окружающий",
-  dramatic: "🎭 Драматичный",
+const LIGHTING_LABELS_EN: Record<Lighting, string> = {
+  soft: "🌤 Soft", daylight: "☀️ Daylight", ambient: "🕯 Ambient", dramatic: "🎭 Dramatic",
+};
+const LIGHTING_LABELS_RU: Record<Lighting, string> = {
+  soft: "🌤 Мягкий", daylight: "☀️ Дневной", ambient: "🕯 Окружающий", dramatic: "🎭 Драматичный",
 };
 
-const MATERIAL_LABELS: Record<Material, string> = {
-  wood: "🪵 Дерево",
-  stone: "🪨 Камень",
-  metal: "⚙️ Металл",
-  textile: "🧶 Текстиль",
-  mixed: "🎨 Смешанный",
+const MATERIAL_LABELS_EN: Record<Material, string> = {
+  wood: "🪵 Wood", stone: "🪨 Stone", metal: "⚙️ Metal",
+  textile: "🧶 Textile", mixed: "🎨 Mixed",
+};
+const MATERIAL_LABELS_RU: Record<Material, string> = {
+  wood: "🪵 Дерево", stone: "🪨 Камень", metal: "⚙️ Металл",
+  textile: "🧶 Текстиль", mixed: "🎨 Смешанный",
 };
 
-const ORIENTATION_LABELS: Record<Orientation, string> = {
-  horizontal: "↔️ Горизонт.",
-  vertical: "↕️ Вертикаль",
+const ORIENTATION_LABELS_EN: Record<Orientation, string> = {
+  horizontal: "↔️ Horizontal", vertical: "↕️ Vertical",
+};
+const ORIENTATION_LABELS_RU: Record<Orientation, string> = {
+  horizontal: "↔️ Горизонт.", vertical: "↕️ Вертикаль",
 };
 
-const THEME_LABELS: Record<Theme, string> = {
-  cozy: "🏠 Уютный",
-  elegant: "🌿 Элегантный",
-  rustic: "🌾 Рустик",
-  artistic: "🎨 Артистичный",
-  industrial: "🏭 Индустриальный",
+const THEME_LABELS_EN: Record<Theme, string> = {
+  cozy: "🏠 Cozy", elegant: "🌿 Elegant", rustic: "🌾 Rustic",
+  artistic: "🎨 Artistic", industrial: "🏭 Industrial",
+};
+const THEME_LABELS_RU: Record<Theme, string> = {
+  cozy: "🏠 Уютный", elegant: "🌿 Элегантный", rustic: "🌾 Рустик",
+  artistic: "🎨 Артистичный", industrial: "🏭 Индустриальный",
 };
 
-// ─── Filter group config ───────────────────────────────────────────────────────
+// ─── Filter group types ───────────────────────────────────────────────────────
 
 type GroupKey = keyof Pick<FilterState,
   "style" | "room" | "palette" | "budget" | "lighting" | "material" | "orientation" | "theme"
 >;
 
-type FilterGroup = {
-  key: GroupKey;
-  label: string;
-  options: string[];
-  labels: Record<string, string>;
-};
-
-const FILTER_GROUPS: FilterGroup[] = [
-  { key: "style",       label: "Стиль",      options: Object.keys(STYLE_LABELS),       labels: STYLE_LABELS       },
-  { key: "room",        label: "Комната",    options: Object.keys(ROOM_LABELS),        labels: ROOM_LABELS        },
-  { key: "budget",      label: "Бюджет",     options: Object.keys(BUDGET_LABELS),      labels: BUDGET_LABELS      },
-  { key: "palette",     label: "Палитра",    options: Object.keys(PALETTE_LABELS),     labels: PALETTE_LABELS     },
-  { key: "lighting",    label: "Свет",       options: Object.keys(LIGHTING_LABELS),    labels: LIGHTING_LABELS    },
-  { key: "material",    label: "Материал",   options: Object.keys(MATERIAL_LABELS),    labels: MATERIAL_LABELS    },
-  { key: "theme",       label: "Атмосфера",  options: Object.keys(THEME_LABELS),       labels: THEME_LABELS       },
-  { key: "orientation", label: "Формат",     options: Object.keys(ORIENTATION_LABELS), labels: ORIENTATION_LABELS },
-];
-
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export default function FiltersBar() {
   const { filters, setFilter, resetFilters } = useFilters();
+  const { lang } = useLanguage();
   const [openGroup, setOpenGroup] = useState<GroupKey | null>(null);
+
+  // Language-dependent label maps
+  const styleLabels      = lang === "en" ? STYLE_LABELS_EN      : STYLE_LABELS_RU;
+  const roomLabels       = lang === "en" ? ROOM_LABELS_EN       : ROOM_LABELS_RU;
+  const paletteLabels    = lang === "en" ? PALETTE_LABELS_EN    : PALETTE_LABELS_RU;
+  const budgetLabels     = lang === "en" ? BUDGET_LABELS_EN     : BUDGET_LABELS_RU;
+  const lightingLabels   = lang === "en" ? LIGHTING_LABELS_EN   : LIGHTING_LABELS_RU;
+  const materialLabels   = lang === "en" ? MATERIAL_LABELS_EN   : MATERIAL_LABELS_RU;
+  const orientLabels     = lang === "en" ? ORIENTATION_LABELS_EN: ORIENTATION_LABELS_RU;
+  const themeLabels      = lang === "en" ? THEME_LABELS_EN      : THEME_LABELS_RU;
+
+  type FilterGroup = {
+    key: GroupKey;
+    label: string;
+    options: string[];
+    labels: Record<string, string>;
+  };
+
+  const FILTER_GROUPS: FilterGroup[] = [
+    { key: "style",       label: lang === "en" ? "Style"       : "Стиль",      options: Object.keys(styleLabels),    labels: styleLabels    },
+    { key: "room",        label: lang === "en" ? "Room"        : "Комната",    options: Object.keys(roomLabels),     labels: roomLabels     },
+    { key: "budget",      label: lang === "en" ? "Budget"      : "Бюджет",     options: Object.keys(budgetLabels),   labels: budgetLabels   },
+    { key: "palette",     label: lang === "en" ? "Palette"     : "Палитра",    options: Object.keys(paletteLabels),  labels: paletteLabels  },
+    { key: "lighting",    label: lang === "en" ? "Light"       : "Свет",       options: Object.keys(lightingLabels), labels: lightingLabels },
+    { key: "material",    label: lang === "en" ? "Material"    : "Материал",   options: Object.keys(materialLabels), labels: materialLabels },
+    { key: "theme",       label: lang === "en" ? "Mood"        : "Атмосфера",  options: Object.keys(themeLabels),    labels: themeLabels    },
+    { key: "orientation", label: lang === "en" ? "Format"      : "Формат",     options: Object.keys(orientLabels),   labels: orientLabels   },
+  ];
 
   const activeCount = FILTER_GROUPS.filter(g => filters[g.key] !== undefined).length;
 
@@ -142,7 +158,7 @@ export default function FiltersBar() {
               <X className="w-3 h-3 ml-0.5" />
             </>
           ) : (
-            <span>Фильтры</span>
+            <span>{lang === "en" ? "Filters" : "Фильтры"}</span>
           )}
         </button>
 

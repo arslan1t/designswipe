@@ -94,14 +94,15 @@ export function formatDate(isoString: string): string {
   });
 }
 
+// English labels — used as fallback keys; pages use useLanguage() for display
 export const ROOM_LABELS: Record<string, string> = {
-  living_room: "Гостиная",
-  bedroom: "Спальня",
-  kitchen: "Кухня",
-  bathroom: "Ванная",
-  office: "Кабинет",
-  studio: "Студия",
-  balcony: "Балкон",
-  dining_room: "Столовая",
-  hallway: "Прихожая",
+  living_room: "Living Room",
+  bedroom: "Bedroom",
+  kitchen: "Kitchen",
+  bathroom: "Bathroom",
+  office: "Office",
+  studio: "Studio",
+  balcony: "Balcony",
+  dining_room: "Dining Room",
+  hallway: "Hallway",
 };
