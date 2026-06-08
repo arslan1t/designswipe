@@ -9,6 +9,7 @@ import {
 } from "lucide-react";
 import type { RoomScanParams, Budget, Room, Style } from "@/lib/types";
 import { useLanguage } from "@/lib/i18n";
+import { getRegion } from "@/lib/region";
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
@@ -148,7 +149,13 @@ export default function UploadPage() {
       const res = await fetch("/api/analyze-room", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ imageBase64: base64, mimeType: "image/jpeg", params }),
+        body: JSON.stringify({
+          imageBase64: base64,
+          mimeType: "image/jpeg",
+          params,
+          lang,
+          region: typeof window !== "undefined" ? getRegion() : "us",
+        }),
       });
 
       if (!res.ok) {

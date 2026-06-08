@@ -4,33 +4,115 @@ import type { RoomScanResult, FurniturePiece, RoomScanParams } from "@/lib/types
 const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
 const ANTHROPIC_MODEL = "claude-haiku-4-5-20251001";
 
-function buildPrompt(params: RoomScanParams): string {
+// ─── Room maps ─────────────────────────────────────────────────────────────────
+
+const ROOM_MAP_EN: Record<string, string> = {
+  living_room: "living room", bedroom: "bedroom", kitchen: "kitchen",
+  bathroom: "bathroom", office: "home office", studio: "studio",
+  balcony: "balcony", dining_room: "dining room", hallway: "hallway",
+};
+const ROOM_MAP_RU: Record<string, string> = {
+  living_room: "гостиная", bedroom: "спальня", kitchen: "кухня",
+  bathroom: "ванная", office: "кабинет/офис", studio: "студия",
+  balcony: "балкон/лоджия", dining_room: "столовая", hallway: "прихожая",
+};
+
+// ─── Room furniture rules (English) ───────────────────────────────────────────
+
+const ROOM_RULES_EN: Record<string, string> = {
+  bedroom:     "Allowed: bed, nightstands, dresser, wardrobe, ottoman, floor lamp, bedside lamp, mirror, textiles (curtains, bedding, rug). FORBIDDEN: sofa, dining table, kitchen items.",
+  living_room: "Allowed: sofa, armchairs, coffee table, TV stand, bookcase, floor lamp, rug, décor. FORBIDDEN: bed, mattress, kitchen items.",
+  kitchen:     "Allowed: dining table, chairs, bar stools, kitchen island, shelves, pendant lights. FORBIDDEN: sofa, bed, wardrobe.",
+  dining_room: "Allowed: dining table, chairs, sideboard, buffet, chandelier over table, rug. FORBIDDEN: sofa, bed.",
+  office:      "Allowed: desk, office chair, shelves, bookcase, desk lamp, filing cabinet. FORBIDDEN: sofa, bed, dining table.",
+  bathroom:    "Allowed: vanity unit, mirror, shelves, hooks, bath mat, accessories. FORBIDDEN: sofa, bed, table.",
+  hallway:     "Allowed: coat rack, shoe rack, mirror, bench/ottoman, shelf. FORBIDDEN: sofa, bed, dining table.",
+  balcony:     "Allowed: garden chair, folding table, planters, outdoor rug. FORBIDDEN: indoor sofa, bed.",
+  studio:      "Allowed: sofa bed, desk, chair, shelves, floor lamp, rug, room dividers.",
+};
+
+const ROOM_RULES_RU: Record<string, string> = {
+  bedroom:     "Разрешено: кровать, прикроватные тумбы, комод, шкаф, пуф, торшер, ночник, зеркало, текстиль (шторы, постельное бельё, ковёр). ЗАПРЕЩЕНО: диван, обеденный стол, кухонные предметы.",
+  living_room: "Разрешено: диван, кресла, журнальный столик, ТВ-тумба, стеллаж, торшер, ковёр, декор. ЗАПРЕЩЕНО: кровать, матрас, кухонные предметы.",
+  kitchen:     "Разрешено: обеденный стол, стулья, барные стулья, кухонный остров, полки, светильники над столом. ЗАПРЕЩЕНО: диван, кровать, шкаф для одежды.",
+  dining_room: "Разрешено: обеденный стол, стулья, сервант, буфет, люстра над столом, ковёр. ЗАПРЕЩЕНО: диван, кровать.",
+  office:      "Разрешено: рабочий стол, офисное кресло, полки, стеллажи, настольная лампа, тумба. ЗАПРЕЩЕНО: диван, кровать, обеденный стол.",
+  bathroom:    "Разрешено: тумба под раковину, зеркало, полки, крючки, коврик, аксессуары. ЗАПРЕЩЕНО: диван, кровать, стол.",
+  hallway:     "Разрешено: вешалка, обувница, зеркало, пуф, полка. ЗАПРЕЩЕНО: диван, кровать, обеденный стол.",
+  balcony:     "Разрешено: садовый стул, складной столик, кашпо, уличный коврик. ЗАПРЕЩЕНО: диван для гостиной, кровать.",
+  studio:      "Разрешено: диван-кровать, стол, стул, полки, торшер, ковёр, разделители пространства.",
+};
+
+// ─── Prompt builders ──────────────────────────────────────────────────────────
+
+function buildPromptEn(params: RoomScanParams): string {
+  const budgetMap = { low: "under $500", medium: "$500–$2,000", high: "over $2,000" };
+  const roomName = ROOM_MAP_EN[params.roomType] || params.roomType;
+  const roomRules = ROOM_RULES_EN[params.roomType] || "Recommend only furniture appropriate for this room type.";
+
+  return `You are an experienced interior designer with 15 years of expertise. Carefully analyze the room photo and provide professional furniture recommendations.
+
+CLIENT PARAMETERS:
+• Room type: ${roomName}
+• Budget: ${budgetMap[params.budget]}
+${params.stylePreference ? `• Preferred style: ${params.stylePreference}` : "• Style: determine from photo and suggest the best match"}
+${params.roomSizeM2 ? `• Area: ~${params.roomSizeM2} m²` : "• Area: estimate visually from photo"}
+${params.notes ? `• Client notes: ${params.notes}` : ""}
+
+CRITICAL — ROOM-TYPE FURNITURE RULES:
+${roomRules}
+If an item is NOT appropriate for a ${roomName} — do NOT recommend it under any circumstances.
+
+TASK:
+1. Carefully examine the photo: walls, floor, lighting, proportions, existing items
+2. Identify the interior style and dominant colors
+3. Select furniture and décor ONLY appropriate for ${roomName}, within budget
+4. For each item provide exact marketplace search queries
+
+RULES:
+- Do NOT recommend items already visible in the photo
+- Prices must STRICTLY match the budget: ${budgetMap[params.budget]}
+- Priority order: essential first, then secondary
+- Search queries must be specific: material + color + style + size
+- Use precise terms from Amazon/IKEA/Wayfair catalogs
+
+Return ONLY valid JSON with no markdown and no explanations:
+{
+  "detectedStyle": "exact style name in English",
+  "detectedColors": ["main color 1", "main color 2", "accent color"],
+  "detectedElements": ["existing item 1", "item 2", "room feature"],
+  "roomCondition": "needs_renovation or fresh_renovation or good_condition or excellent",
+  "summary": "3 sentences: what's good about the room, what needs improvement, main advice",
+  "furnitureList": [
+    {
+      "id": "f1",
+      "category": "Item name (e.g.: Modular sofa)",
+      "reason": "Specific reason: why this item and why it fits here",
+      "searchQuery": "exact query: material + color + style + size",
+      "searchQueryEn": "exact English query for Amazon/IKEA: material + color + style + size",
+      "priceMin": number,
+      "priceMax": number,
+      "currency": "USD",
+      "style": "item style",
+      "color": "specific color/shade",
+      "material": "material",
+      "priority": "essential or recommended or optional"
+    }
+  ]
+}
+
+Provide exactly 6–8 items. Distribution: 2-3 essential, 2-3 recommended, 1-2 optional.`;
+}
+
+function buildPromptRu(params: RoomScanParams): string {
   const budgetMap = { low: "до 50 000 ₽", medium: "50 000–200 000 ₽", high: "от 200 000 ₽" };
-  const roomMap: Record<string, string> = {
-    living_room: "гостиная", bedroom: "спальня", kitchen: "кухня",
-    bathroom: "ванная", office: "кабинет/офис", studio: "студия",
-    balcony: "балкон/лоджия", dining_room: "столовая", hallway: "прихожая",
-  };
-
-  // Room-specific allowed furniture — strict enforcement
-  const roomAllowedItems: Record<string, string> = {
-    bedroom:     "Разрешено: кровать, прикроватные тумбы, комод, шкаф, пуф, торшер, ночник, зеркало, текстиль (шторы, постельное бельё, ковёр). ЗАПРЕЩЕНО: диван, обеденный стол, кухонные предметы.",
-    living_room: "Разрешено: диван, кресла, журнальный столик, ТВ-тумба, стеллаж, торшер, ковёр, декор. ЗАПРЕЩЕНО: кровать, матрас, кухонные предметы.",
-    kitchen:     "Разрешено: обеденный стол, стулья, барные стулья, кухонный остров, полки, светильники над столом. ЗАПРЕЩЕНО: диван, кровать, шкаф для одежды.",
-    dining_room: "Разрешено: обеденный стол, стулья, сервант, буфет, люстра над столом, ковёр. ЗАПРЕЩЕНО: диван, кровать.",
-    office:      "Разрешено: рабочий стол, офисное кресло, полки, стеллажи, настольная лампа, тумба. ЗАПРЕЩЕНО: диван, кровать, обеденный стол.",
-    bathroom:    "Разрешено: тумба под раковину, зеркало, полки, крючки, коврик, аксессуары. ЗАПРЕЩЕНО: диван, кровать, стол.",
-    hallway:     "Разрешено: вешалка, обувница, зеркало, пуф, полка. ЗАПРЕЩЕНО: диван, кровать, обеденный стол.",
-    balcony:     "Разрешено: садовый стул, складной столик, кашпо, уличный коврик. ЗАПРЕЩЕНО: диван для гостиной, кровать.",
-    studio:      "Разрешено: диван-кровать, стол, стул, полки, торшер, ковёр, разделители пространства.",
-  };
-
-  const roomRules = roomAllowedItems[params.roomType] || "Рекомендуй только подходящую для данного типа помещения мебель.";
+  const roomName = ROOM_MAP_RU[params.roomType] || params.roomType;
+  const roomRules = ROOM_RULES_RU[params.roomType] || "Рекомендуй только подходящую для данного типа помещения мебель.";
 
   return `Ты — опытный интерьерный дизайнер с 15-летним стажем. Твоя задача — детально проанализировать фото комнаты и дать профессиональные рекомендации по мебели.
 
 ПАРАМЕТРЫ КЛИЕНТА:
-• Тип помещения: ${roomMap[params.roomType] || params.roomType}
+• Тип помещения: ${roomName}
 • Бюджет: ${budgetMap[params.budget]}
 ${params.stylePreference ? `• Желаемый стиль: ${params.stylePreference}` : "• Стиль: определи сам на основе фото и дай лучший вариант"}
 ${params.roomSizeM2 ? `• Площадь: ~${params.roomSizeM2} м²` : "• Площадь: оцени визуально по фото"}
@@ -38,20 +120,20 @@ ${params.notes ? `• Пожелания клиента: ${params.notes}` : ""}
 
 КРИТИЧЕСКИ ВАЖНО — ПРАВИЛА ПО ТИПУ ПОМЕЩЕНИЯ:
 ${roomRules}
-Если предмет не подходит для ${roomMap[params.roomType] || params.roomType} — НЕ рекомендуй его ни при каких условиях.
+Если предмет не подходит для ${roomName} — НЕ рекомендуй его ни при каких условиях.
 
 ЗАДАЧА:
 1. Внимательно изучи фото: состояние стен, пол, освещение, пропорции, что уже есть
 2. Определи стиль интерьера и доминирующие цвета
-3. Подбери мебель и декор ТОЛЬКО для ${roomMap[params.roomType] || params.roomType}, вписывающиеся в бюджет
+3. Подбери мебель и декор ТОЛЬКО для ${roomName}, вписывающиеся в бюджет
 4. Для каждого предмета дай точный поисковый запрос для маркетплейсов
 
-ПРАВИЛА ДЛЯ РЕКОМЕНДАЦИЙ:
+ПРАВИЛА:
 - Не рекомендуй то, что уже есть на фото
 - Цены должны СТРОГО соответствовать бюджету: ${budgetMap[params.budget]}
 - Сначала — самое важное (essential), потом второстепенное
-- Поисковые запросы должны быть конкретными: указывай материал, цвет, стиль, примерный размер
-- Для searchQueryEn используй точные термины с английского Amazon/IKEA каталога
+- Поисковые запросы: материал + цвет + стиль + примерный размер
+- searchQueryEn — точные термины из каталога Amazon/IKEA
 
 Верни ТОЛЬКО валидный JSON без markdown и без пояснений:
 {
@@ -65,10 +147,10 @@ ${roomRules}
       "id": "f1",
       "category": "Название предмета (например: Угловой диван)",
       "reason": "Конкретная причина: почему именно это и почему сюда подходит",
-      "searchQuery": "точный запрос на русском: материал + цвет + стиль + размер если важен",
+      "searchQuery": "точный запрос: материал + цвет + стиль + размер если важен",
       "searchQueryEn": "exact English query for IKEA/Amazon: material + color + style + size",
-      "priceMin": число без пробелов,
-      "priceMax": число без пробелов,
+      "priceMin": число,
+      "priceMax": число,
       "currency": "RUB",
       "style": "стиль предмета",
       "color": "конкретный цвет/оттенок",
@@ -81,24 +163,36 @@ ${roomRules}
 Дай ровно 6–8 позиций. Распредели: 2-3 essential, 2-3 recommended, 1-2 optional.`;
 }
 
+// ─── POST handler ─────────────────────────────────────────────────────────────
+
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { imageBase64, mimeType = "image/jpeg", params } = body as {
+    const {
+      imageBase64,
+      mimeType = "image/jpeg",
+      params,
+      lang = "en",
+      region = "us",
+    } = body as {
       imageBase64: string;
       mimeType?: string;
       params: RoomScanParams;
+      lang?: string;
+      region?: string;
     };
 
     if (!imageBase64 || !params) {
       return NextResponse.json({ error: "imageBase64 and params are required" }, { status: 400 });
     }
 
+    const useEnglish = lang === "en" || region === "us";
+
     if (!ANTHROPIC_API_KEY) {
-      return NextResponse.json(getDemoResult(params));
+      return NextResponse.json(getDemoResult(params, useEnglish));
     }
 
-    const prompt = buildPrompt(params);
+    const prompt = useEnglish ? buildPromptEn(params) : buildPromptRu(params);
 
     const anthropicRes = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
@@ -135,16 +229,19 @@ export async function POST(req: NextRequest) {
       console.error("Anthropic error:", anthropicRes.status, responseText);
 
       if (anthropicRes.status === 429) {
-        return NextResponse.json({ ...getDemoResult(params), _demo: true });
+        return NextResponse.json({ ...getDemoResult(params, useEnglish), _demo: true });
       }
 
-      let friendlyError = "Ошибка Anthropic API";
+      let friendlyError = useEnglish ? "Anthropic API error" : "Ошибка Anthropic API";
       try {
         const errJson = JSON.parse(responseText);
         const msg = errJson?.error?.message || "";
-        if (anthropicRes.status === 401) friendlyError = "Неверный API ключ. Проверь .env.local";
-        else if (anthropicRes.status === 402 || msg.includes("credit")) {
-          friendlyError = "Закончились кредиты Anthropic. Пополни на console.anthropic.com";
+        if (anthropicRes.status === 401) {
+          friendlyError = useEnglish ? "Invalid API key. Check .env.local" : "Неверный API ключ. Проверь .env.local";
+        } else if (anthropicRes.status === 402 || msg.includes("credit")) {
+          friendlyError = useEnglish
+            ? "Anthropic credits exhausted. Top up at console.anthropic.com"
+            : "Закончились кредиты Anthropic. Пополни на console.anthropic.com";
         } else if (msg) friendlyError = msg;
       } catch { /* ignore */ }
 
@@ -161,14 +258,17 @@ export async function POST(req: NextRequest) {
     try {
       parsed = JSON.parse(jsonStr);
     } catch {
-      return NextResponse.json({ error: "Не удалось разобрать ответ ИИ" }, { status: 502 });
+      return NextResponse.json(
+        { error: useEnglish ? "Failed to parse AI response" : "Не удалось разобрать ответ ИИ" },
+        { status: 502 }
+      );
     }
 
     const result: RoomScanResult = {
       id: `scan_${Date.now()}`,
       createdAt: new Date().toISOString(),
       params,
-      detectedStyle: parsed.detectedStyle || "Современный",
+      detectedStyle: parsed.detectedStyle || (useEnglish ? "Modern" : "Современный"),
       detectedColors: parsed.detectedColors || [],
       detectedElements: parsed.detectedElements || [],
       roomCondition: parsed.roomCondition || "good_condition",
@@ -185,32 +285,50 @@ export async function POST(req: NextRequest) {
   } catch (error) {
     console.error("analyze-room error:", error);
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Внутренняя ошибка" },
+      { error: error instanceof Error ? error.message : "Internal error" },
       { status: 500 }
     );
   }
 }
 
-function getDemoResult(params: RoomScanParams): RoomScanResult {
-  const furniture: FurniturePiece[] = [
+// ─── Demo results ─────────────────────────────────────────────────────────────
+
+function getDemoResult(params: RoomScanParams, english: boolean): RoomScanResult {
+  const furnitureEn: FurniturePiece[] = [
+    { id: "f1", category: "Modular Sofa", reason: "The foundation of the living room — creates a relaxation zone and sets the style for the entire space", searchQuery: "modular sofa light grey velvet scandinavian 250cm", searchQueryEn: "modular sofa grey velvet scandinavian 250cm", priceMin: 400, priceMax: 1200, currency: "USD", style: "scandinavian", color: "light grey", material: "velvet", priority: "essential" },
+    { id: "f2", category: "Coffee Table", reason: "Completes the sofa area, needed for functionality and visual balance", searchQuery: "round coffee table oak metal legs 32 inch", searchQueryEn: "round coffee table oak wood metal legs 32 inch", priceMin: 100, priceMax: 350, currency: "USD", style: "modern", color: "natural oak", material: "solid wood + metal", priority: "essential" },
+    { id: "f3", category: "Open Bookcase", reason: "Adds storage and a decorative zone, visually structures the space", searchQuery: "open bookcase white 5 shelves 71x32 inch", searchQueryEn: "open bookcase white 5 shelves 71x32 inch", priceMin: 80, priceMax: 280, currency: "USD", style: "minimal", color: "matte white", material: "MDF/particle board", priority: "essential" },
+    { id: "f4", category: "Arc Floor Lamp", reason: "Warm diffused lighting creates atmosphere in the evening, no harsh shadows", searchQuery: "arc floor lamp black E26 minimalist", searchQueryEn: "arc floor lamp black E26 minimalist", priceMin: 60, priceMax: 200, currency: "USD", style: "loft", color: "matte black", material: "metal", priority: "recommended" },
+    { id: "f5", category: "Area Rug", reason: "Unifies the furniture group, protects the floor and adds warmth", searchQuery: "wool area rug geometric beige grey 5x8 feet", searchQueryEn: "wool area rug geometric beige grey 5x8 feet", priceMin: 80, priceMax: 400, currency: "USD", style: "scandinavian", color: "beige/grey", material: "wool/cotton", priority: "recommended" },
+    { id: "f6", category: "Throw Pillows", reason: "Quick way to add color and texture, makes the sofa cozier", searchQuery: "decorative throw pillows set 18x18 natural linen", searchQueryEn: "decorative throw pillows set 18x18 natural linen", priceMin: 20, priceMax: 80, currency: "USD", style: "boho", color: "terracotta/ochre/beige", material: "linen/cotton", priority: "optional" },
+    { id: "f7", category: "Round Wall Mirror", reason: "Visually enlarges the room and adds light", searchQuery: "round wall mirror black frame 32 inch", searchQueryEn: "round wall mirror black frame 32 inch", priceMin: 40, priceMax: 180, currency: "USD", style: "modern", color: "black frame", material: "metal/glass", priority: "optional" },
+  ];
+
+  const furnitureRu: FurniturePiece[] = [
     { id: "f1", category: "Модульный диван", reason: "Основа гостиной — создаёт зону отдыха и задаёт стиль всему пространству", searchQuery: "модульный диван серый велюр скандинавский 250см", searchQueryEn: "modular sofa grey velvet scandinavian 250cm", priceMin: 35000, priceMax: 90000, currency: "RUB", style: "scandinavian", color: "светло-серый", material: "велюр", priority: "essential" },
     { id: "f2", category: "Журнальный стол", reason: "Завершает зону дивана, нужен для функциональности и визуального баланса", searchQuery: "журнальный стол круглый дуб металлические ножки 80см", searchQueryEn: "round coffee table oak wood metal legs 80cm", priceMin: 8000, priceMax: 25000, currency: "RUB", style: "modern", color: "натуральный дуб", material: "массив дерева + металл", priority: "essential" },
     { id: "f3", category: "Открытый стеллаж", reason: "Добавляет хранение и декоративную зону, визуально структурирует пространство", searchQuery: "стеллаж открытый белый 5 полок 180x80", searchQueryEn: "open bookcase white 5 shelves 180x80cm", priceMin: 7000, priceMax: 22000, currency: "RUB", style: "minimal", color: "белый матовый", material: "МДФ/ЛДСП", priority: "essential" },
     { id: "f4", category: "Напольный торшер", reason: "Тёплое рассеянное освещение создаёт атмосферу вечером, нет резких теней", searchQuery: "торшер напольный дуга чёрный E27 лофт минимализм", searchQueryEn: "arc floor lamp black E27 minimalist", priceMin: 4000, priceMax: 14000, currency: "RUB", style: "loft", color: "матовый чёрный", material: "металл", priority: "recommended" },
     { id: "f5", category: "Ковёр с рисунком", reason: "Объединяет мебельную группу, защищает пол и добавляет уют", searchQuery: "ковёр шерстяной геометрический бежевый серый 160x230", searchQueryEn: "wool area rug geometric beige grey 160x230cm", priceMin: 6000, priceMax: 30000, currency: "RUB", style: "scandinavian", color: "бежево-серый", material: "шерсть/хлопок", priority: "recommended" },
     { id: "f6", category: "Декоративные подушки", reason: "Быстрый способ добавить цвет и текстуру, делают диван уютнее", searchQuery: "подушки декоративные набор 45x45 натуральные цвета лён", searchQueryEn: "decorative throw pillows set 45x45 natural linen", priceMin: 1500, priceMax: 6000, currency: "RUB", style: "boho", color: "терракот/охра/бежевый", material: "лён/хлопок", priority: "optional" },
-    { id: "f7", category: "Настенное зеркало", reason: "Визуально увеличивает комнату и добавляет свет, особенно важно при невысоких потолках", searchQuery: "зеркало настенное круглое чёрная рама 80см", searchQueryEn: "round wall mirror black frame 80cm", priceMin: 3000, priceMax: 12000, currency: "RUB", style: "modern", color: "чёрная рама", material: "металл/стекло", priority: "optional" },
+    { id: "f7", category: "Настенное зеркало", reason: "Визуально увеличивает комнату и добавляет свет", searchQuery: "зеркало настенное круглое чёрная рама 80см", searchQueryEn: "round wall mirror black frame 80cm", priceMin: 3000, priceMax: 12000, currency: "RUB", style: "modern", color: "чёрная рама", material: "металл/стекло", priority: "optional" },
   ];
 
   return {
     id: `scan_demo_${Date.now()}`,
     createdAt: new Date().toISOString(),
     params,
-    detectedStyle: "Скандинавский минимализм",
-    detectedColors: ["Белый", "Светло-серый", "Натуральное дерево", "Чёрный акцент"],
-    detectedElements: ["Светлые стены", "Деревянный пол", "Хорошее естественное освещение", "Пустые стены"],
+    detectedStyle: english ? "Scandinavian Minimalism" : "Скандинавский минимализм",
+    detectedColors: english
+      ? ["White", "Light grey", "Natural wood", "Black accent"]
+      : ["Белый", "Светло-серый", "Натуральное дерево", "Чёрный акцент"],
+    detectedElements: english
+      ? ["Light walls", "Wooden floor", "Good natural light", "Empty walls"]
+      : ["Светлые стены", "Деревянный пол", "Хорошее естественное освещение", "Пустые стены"],
     roomCondition: "good_condition",
-    summary: "Комната имеет хорошую основу: светлые стены и естественный свет создают отличную базу для уютного интерьера. Сейчас не хватает мягкой мебельной группы и зонирования — пространство ощущается незавершённым. Начни с дивана и журнального стола — они сразу преобразят комнату.",
-    furnitureList: furniture,
+    summary: english
+      ? "The room has a great foundation: light walls and natural light create an excellent base for a cozy interior. It currently lacks a soft furniture group and zoning — the space feels unfinished. Start with a sofa and coffee table — they will instantly transform the room."
+      : "Комната имеет хорошую основу: светлые стены и естественный свет создают отличную базу для уютного интерьера. Сейчас не хватает мягкой мебельной группы и зонирования — пространство ощущается незавершённым. Начни с дивана и журнального стола — они сразу преобразят комнату.",
+    furnitureList: english ? furnitureEn : furnitureRu,
   };
 }

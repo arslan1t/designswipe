@@ -11,7 +11,7 @@ import {
 } from "lucide-react";
 import type { RoomScanResult, FurniturePiece, ShoppingProduct } from "@/lib/types";
 import { saveScanResult, ROOM_LABELS, formatDate } from "@/lib/scanHistory";
-import { getRegion, getMarketplacesForRegion, type MarketplaceId } from "@/lib/region";
+import { getRegion, getMarketplacesForRegion, REGION_CONFIGS, type MarketplaceId } from "@/lib/region";
 import { useLanguage } from "@/lib/i18n";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -32,13 +32,15 @@ type SelectedProduct = {
 };
 
 type Tab = "furniture" | "budget" | "share";
-
-// ─── Constants ───────────────────────────────────────────────────────────────
-
-// Маркетплейсы берём из региона пользователя — заполняется в useEffect
-
-// Moved inside component to be language-aware
 type PriorityKey = "essential" | "recommended" | "optional";
+
+// ─── Price formatter ──────────────────────────────────────────────────────────
+
+function formatPrice(amount: number, currency: string): string {
+  if (currency === "USD") return `$${amount.toLocaleString("en-US")}`;
+  if (currency === "EUR") return `€${amount.toLocaleString("en-US")}`;
+  return `${amount.toLocaleString("ru")} ₽`;
+}
 
 // ─── Main Component ───────────────────────────────────────────────────────────
 
@@ -76,6 +78,7 @@ export default function ResultsPage() {
   const [copied, setCopied] = useState(false);
   const [activePieceId, setActivePieceId] = useState<string | null>(null);
   const fetchedRef = useRef<Set<string>>(new Set());
+  const [regionCurrency, setRegionCurrency] = useState<string>("USD");
   const [marketplaces, setMarketplaces] = useState<{ value: Marketplace; label: string }[]>([
     { value: "all", label: lang === "en" ? "All" : "Все" },
   ]);
@@ -92,13 +95,15 @@ export default function ResultsPage() {
       if (parsed.furnitureList?.length) setActivePieceId(parsed.furnitureList[0].id);
     } catch { router.replace("/upload"); }
 
-    // Загружаем маркетплейсы по региону
     const region = getRegion();
+    const currency = REGION_CONFIGS[region]?.currency || "USD";
+    setRegionCurrency(currency);
     const mps = getMarketplacesForRegion(region);
     setMarketplaces([
-      { value: "all", label: "Все" },
+      { value: "all", label: lang === "en" ? "All" : "Все" },
       ...mps.map(mp => ({ value: mp.id as Marketplace, label: mp.name })),
     ]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [router]);
 
   // ── Auto-fetch products for all pieces ────────────────────────────────────
@@ -132,16 +137,18 @@ export default function ResultsPage() {
     } catch {
       setProductStates(prev => ({
         ...prev,
-        [piece.id]: { loading: false, products: [], marketplace, error: "Ошибка загрузки" },
+        [piece.id]: {
+          loading: false, products: [], marketplace,
+          error: lang === "en" ? "Load error" : "Ошибка загрузки",
+        },
       }));
     }
-  }, []);
+  }, [lang]);
 
   useEffect(() => {
     if (!result?.furnitureList) return;
-    // Загружаем товары для активного элемента и следующего
     result.furnitureList.forEach((piece, idx) => {
-      if (idx < 3) fetchProducts(piece); // первые 3 сразу
+      if (idx < 3) fetchProducts(piece);
     });
   }, [result, fetchProducts]);
 
@@ -156,7 +163,6 @@ export default function ResultsPage() {
     setSelected(prev => {
       const exists = prev.find(s => s.pieceId === piece.id && s.product.id === product.id);
       if (exists) return prev.filter(s => !(s.pieceId === piece.id && s.product.id === product.id));
-      // Replace any existing selection for same piece
       const withoutPiece = prev.filter(s => s.pieceId !== piece.id);
       return [...withoutPiece, { pieceId: piece.id, pieceName: piece.category, product }];
     });
@@ -173,18 +179,31 @@ export default function ResultsPage() {
   const estimatedMax = result?.furnitureList
     ?.reduce((sum, f) => sum + f.priceMax, 0) || 0;
 
+  // Currency to use for display (from AI result or region)
+  const displayCurrency = result?.furnitureList?.[0]?.currency || regionCurrency;
+
   // ── Share ──────────────────────────────────────────────────────────────────
-  const shareText = result ? [
+  const shareText = result ? (lang === "en" ? [
+    `🏠 My room project — ${result.detectedStyle}`,
+    `📋 ${ROOM_LABELS[result.params.roomType] || result.params.roomType}`,
+    ``,
+    `✅ Furniture items: ${result.furnitureList?.length || 0}`,
+    selected.length > 0 ? `🛒 In cart: ${selected.length} items for ${formatPrice(totalBudget, displayCurrency)}` : "",
+    ``,
+    result.furnitureList?.slice(0, 3).map(f => `• ${f.category}: ${formatPrice(f.priceMin, f.currency || displayCurrency)}–${formatPrice(f.priceMax, f.currency || displayCurrency)}`).join("\n"),
+    ``,
+    `Created with RoomScan AI`,
+  ] : [
     `🏠 Мой проект комнаты — ${result.detectedStyle}`,
     `📋 ${ROOM_LABELS[result.params.roomType] || result.params.roomType}`,
     ``,
     `✅ Подобрано мебели: ${result.furnitureList?.length || 0} позиций`,
-    selected.length > 0 ? `🛒 В корзине: ${selected.length} товаров на ${totalBudget.toLocaleString("ru")} ₽` : "",
+    selected.length > 0 ? `🛒 В корзине: ${selected.length} товаров на ${formatPrice(totalBudget, displayCurrency)}` : "",
     ``,
-    result.furnitureList?.slice(0, 3).map(f => `• ${f.category}: ${f.priceMin.toLocaleString("ru")}–${f.priceMax.toLocaleString("ru")} ₽`).join("\n"),
+    result.furnitureList?.slice(0, 3).map(f => `• ${f.category}: ${formatPrice(f.priceMin, f.currency || displayCurrency)}–${formatPrice(f.priceMax, f.currency || displayCurrency)}`).join("\n"),
     ``,
     `Создано с помощью RoomScan AI`,
-  ].filter(Boolean).join("\n") : "";
+  ]).filter(Boolean).join("\n") : "";
 
   const handleCopy = async () => {
     try {
@@ -209,16 +228,14 @@ export default function ResultsPage() {
       {/* ── Hero ── */}
       <div className="relative">
         {result.imagePreview ? (
-          <img src={result.imagePreview} alt="Комната" className="w-full h-56 object-cover" />
+          <img src={result.imagePreview} alt={lang === "en" ? "Room" : "Комната"} className="w-full h-56 object-cover" />
         ) : (
           <div className="w-full h-56 bg-gradient-to-br from-slate-800 to-slate-900 flex items-center justify-center">
             <Sofa className="w-16 h-16 text-slate-600" />
           </div>
         )}
-        {/* Overlay gradient */}
         <div className="absolute inset-0 bg-gradient-to-t from-[#0A0F2C] via-[#0A0F2C]/40 to-transparent" />
 
-        {/* Back button */}
         <button
           onClick={() => router.push("/upload")}
           className="absolute top-4 left-4 p-2 bg-black/40 backdrop-blur rounded-xl border border-white/10 hover:bg-black/60 transition-colors"
@@ -226,7 +243,6 @@ export default function ResultsPage() {
           <ArrowLeft className="w-5 h-5 text-white" />
         </button>
 
-        {/* New scan */}
         <button
           onClick={() => router.push("/upload")}
           className="absolute top-4 right-4 flex items-center gap-1.5 px-3 py-2 bg-black/40 backdrop-blur rounded-xl border border-white/10 hover:bg-black/60 transition-colors text-xs text-white"
@@ -235,7 +251,6 @@ export default function ResultsPage() {
           {lang === "en" ? "New scan" : "Новый скан"}
         </button>
 
-        {/* Room info */}
         <div className="absolute bottom-4 left-4 right-4">
           <div className="flex items-end justify-between">
             <div>
@@ -281,19 +296,19 @@ export default function ResultsPage() {
             { id: "furniture" as Tab, label: lang === "en" ? "Furniture" : "Мебель", icon: LayoutGrid, count: result.furnitureList?.length },
             { id: "budget" as Tab, label: lang === "en" ? "Budget" : "Бюджет", icon: Wallet, count: selected.length || null },
             { id: "share" as Tab, label: lang === "en" ? "Share" : "Поделиться", icon: Share2, count: null },
-          ]).map(t => (
+          ]).map(tb => (
             <button
-              key={t.id}
-              onClick={() => setTab(t.id)}
+              key={tb.id}
+              onClick={() => setTab(tb.id)}
               className={`flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-sm font-medium transition-all
-                ${tab === t.id ? "bg-sky-600 text-white shadow-lg shadow-sky-900/40" : "text-slate-400 hover:text-slate-200"}`}
+                ${tab === tb.id ? "bg-sky-600 text-white shadow-lg shadow-sky-900/40" : "text-slate-400 hover:text-slate-200"}`}
             >
-              <t.icon className="w-4 h-4" />
-              {t.label}
-              {t.count != null && (
+              <tb.icon className="w-4 h-4" />
+              {tb.label}
+              {tb.count != null && (
                 <span className={`text-xs px-1.5 py-0.5 rounded-full font-bold
-                  ${tab === t.id ? "bg-white/20 text-white" : "bg-slate-700 text-slate-300"}`}>
-                  {t.count}
+                  ${tab === tb.id ? "bg-white/20 text-white" : "bg-slate-700 text-slate-300"}`}>
+                  {tb.count}
                 </span>
               )}
             </button>
@@ -341,6 +356,7 @@ export default function ResultsPage() {
                 if (piece.id !== activePieceId) return null;
                 const cfg = PRIORITY_CONFIG[piece.priority];
                 const state = productStates[piece.id];
+                const priceCurrency = piece.currency || displayCurrency;
 
                 return (
                   <motion.div
@@ -366,7 +382,7 @@ export default function ResultsPage() {
                         <div className="text-sm">
                           <span className="text-slate-400">{lang === "en" ? "Price: " : "Цена: "}</span>
                           <span className="font-medium text-sky-300">
-                            {piece.priceMin.toLocaleString("ru")} – {piece.priceMax.toLocaleString("ru")} ₽
+                            {formatPrice(piece.priceMin, priceCurrency)} – {formatPrice(piece.priceMax, priceCurrency)}
                           </span>
                         </div>
                         {piece.color && (
@@ -381,7 +397,7 @@ export default function ResultsPage() {
                     {/* Marketplace filter */}
                     <div className="flex gap-1.5 overflow-x-auto pb-1">
                       {marketplaces.map(mp => {
-                        const isActive = state?.marketplace === mp.value;
+                        const isActiveFilter = state?.marketplace === mp.value;
                         return (
                           <button
                             key={mp.value}
@@ -391,7 +407,7 @@ export default function ResultsPage() {
                               fetchProducts(piece, mp.value);
                             }}
                             className={`shrink-0 px-3 py-1.5 rounded-full text-xs font-medium border transition-all
-                              ${isActive
+                              ${isActiveFilter
                                 ? "bg-sky-600 border-sky-500 text-white"
                                 : "bg-slate-900 border-slate-700 text-slate-400 hover:border-slate-500"
                               }`}
@@ -422,6 +438,7 @@ export default function ResultsPage() {
                               product={product}
                               selected={isProductSelected(piece.id, product.id)}
                               onSelect={() => toggleSelect(piece, product)}
+                              lang={lang}
                             />
                           ))
                         )}
@@ -441,7 +458,10 @@ export default function ResultsPage() {
                     onClick={() => setActivePieceId(next.id)}
                     className="w-full flex items-center justify-between px-4 py-3 rounded-2xl bg-slate-900/60 border border-slate-800 hover:border-slate-600 transition-colors text-sm"
                   >
-                    <span className="text-slate-400">{lang === "en" ? "Next: " : "Следующий: "}<span className="text-slate-200 font-medium">{next.category}</span></span>
+                    <span className="text-slate-400">
+                      {lang === "en" ? "Next: " : "Следующий: "}
+                      <span className="text-slate-200 font-medium">{next.category}</span>
+                    </span>
                     <ChevronRight className="w-4 h-4 text-slate-500" />
                   </button>
                 );
@@ -452,7 +472,6 @@ export default function ResultsPage() {
           {/* ──── BUDGET TAB ──── */}
           {tab === "budget" && (
             <div className="space-y-4">
-              {/* Budget overview */}
               <div className="rounded-2xl bg-gradient-to-br from-sky-900/40 to-slate-900/80 border border-sky-800/40 p-4 space-y-3">
                 <div className="flex items-center gap-2 text-sky-400 font-semibold">
                   <TrendingUp className="w-5 h-5" />
@@ -461,12 +480,14 @@ export default function ResultsPage() {
                 <div className="grid grid-cols-2 gap-3">
                   <div className="bg-slate-900/60 rounded-xl p-3">
                     <div className="text-xs text-slate-400 mb-1">{lang === "en" ? "Selected items" : "Выбрано товаров"}</div>
-                    <div className="text-2xl font-bold text-white">{totalBudget > 0 ? `${totalBudget.toLocaleString("ru")} ₽` : "—"}</div>
+                    <div className="text-2xl font-bold text-white">
+                      {totalBudget > 0 ? formatPrice(totalBudget, displayCurrency) : "—"}
+                    </div>
                     <div className="text-xs text-slate-500">{selected.length} {lang === "en" ? "items" : "позиций"}</div>
                   </div>
                   <div className="bg-slate-900/60 rounded-xl p-3">
                     <div className="text-xs text-slate-400 mb-1">{lang === "en" ? "AI estimate" : "Оценка ИИ"}</div>
-                    <div className="text-sm font-semibold text-slate-300">{estimatedMin.toLocaleString("ru")} ₽</div>
+                    <div className="text-sm font-semibold text-slate-300">{formatPrice(estimatedMin, displayCurrency)}</div>
                     <div className="text-xs text-slate-500">{lang === "en" ? "minimum budget" : "минимальный бюджет"}</div>
                   </div>
                 </div>
@@ -476,11 +497,17 @@ export default function ResultsPage() {
               {selected.length === 0 ? (
                 <div className="text-center py-10 space-y-2">
                   <ShoppingBag className="w-10 h-10 text-slate-700 mx-auto" />
-                  <p className="text-slate-500 text-sm">Нажми на карточку товара во вкладке "Мебель",<br />чтобы добавить его в корзину</p>
+                  <p className="text-slate-500 text-sm">
+                    {lang === "en"
+                      ? 'Tap a product card in the "Furniture" tab to add it to your cart'
+                      : 'Нажми на карточку товара во вкладке "Мебель", чтобы добавить его в корзину'}
+                  </p>
                 </div>
               ) : (
                 <div className="space-y-2">
-                  <h3 className="text-sm font-medium text-slate-400">Выбранные товары</h3>
+                  <h3 className="text-sm font-medium text-slate-400">
+                    {lang === "en" ? "Selected items" : "Выбранные товары"}
+                  </h3>
                   {selected.map(s => (
                     <div key={`${s.pieceId}_${s.product.id}`} className="flex items-center gap-3 p-3 bg-slate-900/60 border border-slate-800 rounded-2xl">
                       {s.product.imageUrl && (
@@ -490,7 +517,9 @@ export default function ResultsPage() {
                         <div className="text-xs text-sky-400 font-medium mb-0.5">{s.pieceName}</div>
                         <div className="text-sm text-slate-200 line-clamp-1">{s.product.title}</div>
                         <div className="text-sm font-bold text-white mt-0.5">
-                          {s.product.price > 0 ? `${s.product.price.toLocaleString("ru")} ₽` : "Цена на сайте"}
+                          {s.product.price > 0
+                            ? formatPrice(s.product.price, s.product.currency || displayCurrency)
+                            : (lang === "en" ? "See price on site" : "Цена на сайте")}
                         </div>
                       </div>
                       <div className="flex flex-col gap-2 shrink-0">
@@ -510,22 +539,25 @@ export default function ResultsPage() {
 
               {/* All furniture estimate */}
               <div className="space-y-2">
-                <h3 className="text-sm font-medium text-slate-400">Оценка всех позиций</h3>
+                <h3 className="text-sm font-medium text-slate-400">
+                  {lang === "en" ? "All items estimate" : "Оценка всех позиций"}
+                </h3>
                 {result.furnitureList?.map(piece => {
                   const cfg = PRIORITY_CONFIG[piece.priority];
+                  const priceCurrency = piece.currency || displayCurrency;
                   return (
                     <div key={piece.id} className="flex items-center gap-3 py-2 border-b border-slate-800/60">
                       <span className={`w-2 h-2 rounded-full shrink-0 ${cfg.dot}`} />
                       <span className="flex-1 text-sm text-slate-300">{piece.category}</span>
                       <span className="text-sm text-slate-400 font-medium">
-                        {piece.priceMin.toLocaleString("ru")} – {piece.priceMax.toLocaleString("ru")} ₽
+                        {formatPrice(piece.priceMin, priceCurrency)} – {formatPrice(piece.priceMax, priceCurrency)}
                       </span>
                     </div>
                   );
                 })}
                 <div className="flex items-center justify-between pt-2 font-semibold">
-                  <span className="text-slate-300">Итого (макс.)</span>
-                  <span className="text-sky-300">{estimatedMax.toLocaleString("ru")} ₽</span>
+                  <span className="text-slate-300">{lang === "en" ? "Total (max)" : "Итого (макс.)"}</span>
+                  <span className="text-sky-300">{formatPrice(estimatedMax, displayCurrency)}</span>
                 </div>
               </div>
             </div>
@@ -537,7 +569,7 @@ export default function ResultsPage() {
               <div className="rounded-2xl bg-slate-900/80 border border-slate-800 p-4 space-y-3">
                 <h3 className="font-semibold flex items-center gap-2">
                   <Share2 className="w-5 h-5 text-sky-400" />
-                  Поделиться проектом
+                  {lang === "en" ? "Share project" : "Поделиться проектом"}
                 </h3>
                 <div className="bg-slate-800/60 rounded-xl p-4 text-sm text-slate-300 whitespace-pre-line font-mono leading-relaxed">
                   {shareText}
@@ -548,17 +580,32 @@ export default function ResultsPage() {
                     ${copied ? "bg-emerald-600 text-white" : "bg-sky-600 hover:bg-sky-500 text-white"}`}
                 >
                   {copied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
-                  {copied ? "Скопировано!" : "Скопировать текст"}
+                  {copied
+                    ? (lang === "en" ? "Copied!" : "Скопировано!")
+                    : (lang === "en" ? "Copy text" : "Скопировать текст")}
                 </button>
               </div>
 
               {/* Quick links */}
               <div className="space-y-2">
-                <h3 className="text-sm font-medium text-slate-400">Быстрый поиск по стилю</h3>
+                <h3 className="text-sm font-medium text-slate-400">
+                  {lang === "en" ? "Search by style" : "Быстрый поиск по стилю"}
+                </h3>
                 {[
-                  { label: "Pinterest — " + result.detectedStyle, url: `https://pinterest.com/search/pins/?q=${encodeURIComponent(result.detectedStyle + " interior")}` },
-                  { label: "Houzz — похожие интерьеры", url: `https://www.houzz.com/photos/query/${encodeURIComponent(result.detectedStyle)}` },
-                  { label: "IKEA — подборка по стилю", url: `https://www.ikea.com/ru/ru/ideas/` },
+                  {
+                    label: "Pinterest — " + result.detectedStyle,
+                    url: `https://pinterest.com/search/pins/?q=${encodeURIComponent(result.detectedStyle + " interior")}`,
+                  },
+                  {
+                    label: "Houzz — " + (lang === "en" ? "similar interiors" : "похожие интерьеры"),
+                    url: `https://www.houzz.com/photos/query/${encodeURIComponent(result.detectedStyle)}`,
+                  },
+                  {
+                    label: lang === "en" ? "IKEA — style ideas" : "IKEA — подборка по стилю",
+                    url: lang === "en"
+                      ? `https://www.ikea.com/us/en/ideas/`
+                      : `https://www.ikea.com/ru/ru/ideas/`,
+                  },
                 ].map(link => (
                   <a key={link.url} href={link.url} target="_blank" rel="noopener noreferrer"
                     className="flex items-center justify-between p-3 bg-slate-900/60 border border-slate-800 rounded-xl hover:border-slate-600 transition-colors text-sm">
@@ -585,10 +632,12 @@ export default function ResultsPage() {
           >
             <div className="flex items-center gap-2">
               <ShoppingBag className="w-5 h-5 text-white" />
-              <span className="text-white font-semibold">{selected.length} товаров выбрано</span>
+              <span className="text-white font-semibold">
+                {selected.length} {lang === "en" ? "items selected" : "товаров выбрано"}
+              </span>
             </div>
             <div className="flex items-center gap-2">
-              <span className="text-white font-bold">{totalBudget.toLocaleString("ru")} ₽</span>
+              <span className="text-white font-bold">{formatPrice(totalBudget, displayCurrency)}</span>
               <ChevronRight className="w-4 h-4 text-white/70" />
             </div>
           </button>
@@ -600,10 +649,11 @@ export default function ResultsPage() {
 
 // ─── Product Card ─────────────────────────────────────────────────────────────
 
-function ProductCard({ product, selected, onSelect }: {
+function ProductCard({ product, selected, onSelect, lang }: {
   product: ShoppingProduct;
   selected: boolean;
   onSelect: () => void;
+  lang: string;
 }) {
   return (
     <motion.div
@@ -615,7 +665,6 @@ function ProductCard({ product, selected, onSelect }: {
         }`}
       onClick={onSelect}
     >
-      {/* Image */}
       <div className="w-20 h-20 shrink-0 rounded-xl overflow-hidden bg-slate-800">
         {product.imageUrl ? (
           <img src={product.imageUrl} alt={product.title} className="w-full h-full object-cover"
@@ -627,7 +676,6 @@ function ProductCard({ product, selected, onSelect }: {
         )}
       </div>
 
-      {/* Info */}
       <div className="flex-1 min-w-0">
         <p className="text-sm font-medium text-slate-100 line-clamp-2 leading-tight mb-1">{product.title}</p>
         <div className="flex items-center gap-1.5 mb-2">
@@ -640,7 +688,9 @@ function ProductCard({ product, selected, onSelect }: {
         </div>
         <div className="flex items-center justify-between">
           <span className="text-base font-bold text-sky-300">
-            {product.price > 0 ? `${product.price.toLocaleString("ru")} ₽` : "Цена на сайте"}
+            {product.price > 0
+              ? formatPrice(product.price, product.currency || "USD")
+              : (lang === "en" ? "See price on site" : "Цена на сайте")}
           </span>
           <div className="flex items-center gap-1.5">
             {selected && <Check className="w-4 h-4 text-sky-400" />}
